@@ -41,18 +41,19 @@ def generate_clickstream_rows(n: int = 10, seed: int | None = 42):
                 "product_id": product_id,
                 "category_id": category_id,
                 "channel_id": channel_id,
-                "timestamp": ts.isoformat(sep=" ", timespec="seconds"),
+                "event_time": ts.isoformat(sep=" ", timespec="seconds"),
                 "page_url": f"https://example.com/product/{product_id}",
                 "referrer_url": f"https://{channel_name.lower().replace(' ', '')}.example.com",
-                "ad_campaign": f"{channel_name} {faker.word().title()}",
+                "campaign_name": f"{channel_name} {faker.word().title()}",
                 "device_type": random.choice(["desktop", "mobile"]),
                 "browser": random.choice(["Chrome", "Firefox", "Safari", "Edge"]),
                 "os": random.choice(["Windows", "macOS", "Linux", "Android", "iOS"]),
                 "country": faker.country(),
                 "city": faker.city(),
-                "price_viewed": price_viewed,
-                "discount_shown": discount_shown,
-                "is_new_user": is_new_user,
+                "price": price_viewed,
+                "discount": discount_shown,
+                "is_returning": str(not is_new_user),
+                "is_read": "null",
             }
         )
 
@@ -66,14 +67,33 @@ def main():
     out_path = os.path.join(output_dir, "clickstream_sample.csv")
 
     rows = generate_clickstream_rows(n=10)
-    fieldnames = list(rows[0].keys()) if rows else []
+    fieldnames = [
+        "event_id",
+        "user_id",
+        "session_id",
+        "event_type",
+        "product_id",
+        "category_id",
+        "channel_id",
+        "event_time",
+        "page_url",
+        "referrer_url",
+        "campaign_name",
+        "device_type",
+        "browser",
+        "os",
+        "country",
+        "city",
+        "price",
+        "discount",
+        "is_returning",
+        "is_read",
+    ]
 
     mode = "a" if os.path.exists(out_path) else "w"
 
     with open(out_path, mode, newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        if mode == "w":
-            writer.writeheader()
+        writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
         writer.writerows(rows)
 
     print(f"Wrote {len(rows)} rows to {out_path}")

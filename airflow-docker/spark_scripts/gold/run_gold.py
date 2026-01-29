@@ -9,6 +9,16 @@ from pyspark.sql import functions as F
 from pyspark.sql.window import Window
 
 
+PREVIEW_ROWS = int(os.environ.get("ECOM_PREVIEW_ROWS", "20"))
+
+
+def _preview_df(df, name: str) -> None:
+    if PREVIEW_ROWS <= 0:
+        return
+    print(f"=== Preview: {name} (top {PREVIEW_ROWS}) ===")
+    df.show(PREVIEW_ROWS, truncate=False)
+
+
 def _read_silver(spark: SparkSession, silver_path: str, table: str):
     path = os.path.join(silver_path, table)
     return spark.read.parquet(path)
@@ -246,6 +256,7 @@ def build_q1_conversion_funnel(spark: SparkSession, silver_path: str, gold_path:
         "overall_conversion_rate",
     )
     
+    _preview_df(q1_result, "gold_q1_conversion_funnel")
     _write_gold(q1_result, gold_path, "gold_q1_conversion_funnel")
 
 
@@ -324,6 +335,7 @@ def build_q2_rfm_segmentation(spark: SparkSession, silver_path: str, gold_path: 
         "last_order_date",
     )
     
+    _preview_df(q2_result, "gold_q2_rfm_segmentation")
     _write_gold(q2_result, gold_path, "gold_q2_rfm_segmentation")
 
 
@@ -369,6 +381,8 @@ def build_q3_promotion_effectiveness(spark: SparkSession, silver_path: str, gold
             ).otherwise(None)
         )
     
+    _preview_df(comparison, "gold_q3_promo_comparison")
+    _preview_df(promo_detail, "gold_q3_promo_detail")
     _write_gold(comparison, gold_path, "gold_q3_promo_comparison")
     _write_gold(promo_detail, gold_path, "gold_q3_promo_detail")
 
@@ -459,6 +473,7 @@ def build_q4_inventory_analysis(spark: SparkSession, silver_path: str, gold_path
          "inventory_status",
      )
     
+    _preview_df(q4_result, "gold_q4_inventory_analysis")
     _write_gold(q4_result, gold_path, "gold_q4_inventory_analysis")
 
 
@@ -477,24 +492,24 @@ def build_q5_attribution(spark: SparkSession, silver_path: str, gold_path: str) 
         .select(
             F.col("user_id"),
             F.col("session_id"),
-            F.col("timestamp").alias("purchase_time"),
+            F.col("event_time").alias("purchase_time"),
         ).distinct()
     
     user_touchpoints = clickstream.filter(F.col("event_type").isin("view", "add_to_cart")) \
         .join(purchases, on="user_id", how="inner") \
         .filter(
-            (F.col("timestamp") < F.col("purchase_time")) &
-            (F.col("timestamp") >= F.date_sub(F.col("purchase_time"), 30))
+            (F.col("event_time") < F.col("purchase_time")) &
+            (F.col("event_time") >= F.date_sub(F.col("purchase_time"), 30))
         ).select(
             "user_id",
             "channel_id",
-            "timestamp",
+            "event_time",
             "purchase_time",
             "event_type",
         )
     
-    w_first = Window.partitionBy("user_id", "purchase_time").orderBy("timestamp")
-    w_last = Window.partitionBy("user_id", "purchase_time").orderBy(F.desc("timestamp"))
+    w_first = Window.partitionBy("user_id", "purchase_time").orderBy("event_time")
+    w_last = Window.partitionBy("user_id", "purchase_time").orderBy(F.desc("event_time"))
     
     touchpoints_ranked = user_touchpoints.withColumn(
         "first_touch_rank", F.row_number().over(w_first)
@@ -542,6 +557,7 @@ def build_q5_attribution(spark: SparkSession, silver_path: str, gold_path: str) 
             "linear_conversions",
         )
     
+    _preview_df(q5_result, "gold_q5_attribution")
     _write_gold(q5_result, gold_path, "gold_q5_attribution")
 
 

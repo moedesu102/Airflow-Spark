@@ -74,6 +74,19 @@ def ecommerce_etl_pipeline():
         ],
     )
 
-    batch_bronze >> batch_silver >> batch_gold
+    stream_clickstream = SparkSubmitOperator(
+        task_id="stream_clickstream",
+        application="/opt/airflow/spark_scripts/bronze/stream_clickstream.py",
+        conn_id="spark_default",
+        conf=spark_conf,
+        application_args=[
+            "--input_path", "/opt/spark-data/clickstream_sample.csv",
+            "--bronze_out", "/opt/spark-data/bronze",
+            "--checkpoint_path", "/opt/spark-data/checkpoints/clickstream",
+            "--mode", "once",
+        ],
+    )
+
+    stream_clickstream >> batch_bronze >> batch_silver >> batch_gold
 
 ecommerce_etl_pipeline()

@@ -36,6 +36,7 @@ airflow-docker/dags/**/__pycache__/
 airflow-docker/data/bronze/
 airflow-docker/data/silver/
 airflow-docker/data/gold/
+airflow-docker/data/checkpoints/
 airflow-docker/data/_temporary/
 airflow-docker/data/**/_delta_log/
 airflow-docker/data/output/

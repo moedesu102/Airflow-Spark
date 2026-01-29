@@ -48,7 +48,7 @@ def generate_data():
             seo_title        VARCHAR(255),
             seo_description  VARCHAR(255),
             created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at       TIMESTAMP
+            updated_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
 
         CREATE TABLE IF NOT EXISTS products (
@@ -73,7 +73,7 @@ def generate_data():
             release_date     DATE,
             tags             VARCHAR(255),
             created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at       TIMESTAMP,
+            updated_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             CONSTRAINT fk_products_category
                 FOREIGN KEY (category_id) REFERENCES categories(category_id)
         );
@@ -97,7 +97,7 @@ def generate_data():
             is_active        BOOLEAN DEFAULT TRUE,
             last_login_at    TIMESTAMP,
             created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at       TIMESTAMP
+            updated_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
 
         CREATE TABLE IF NOT EXISTS orders (
@@ -121,7 +121,7 @@ def generate_data():
             ip_address       VARCHAR(50),
             user_agent       TEXT,
             created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at       TIMESTAMP,
+            updated_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             CONSTRAINT fk_orders_user
                 FOREIGN KEY (user_id) REFERENCES users(user_id)
         );
@@ -137,7 +137,7 @@ def generate_data():
             line_total       DECIMAL(15, 2),
             variant_name     VARCHAR(255),
             created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at       TIMESTAMP,
+            updated_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             CONSTRAINT fk_order_items_order
                 FOREIGN KEY (order_id) REFERENCES orders(order_id),
             CONSTRAINT fk_order_items_product
@@ -156,7 +156,7 @@ def generate_data():
             campaign_name    VARCHAR(255),
             channel_limit    VARCHAR(100),
             created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at       TIMESTAMP
+            updated_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
 
         CREATE TABLE IF NOT EXISTS order_promotions (
@@ -164,7 +164,7 @@ def generate_data():
             promo_id         INT,
             applied_amount   DECIMAL(15, 2),
             created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at       TIMESTAMP,
+            updated_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (order_id, promo_id),
             CONSTRAINT fk_order_promotions_order
                 FOREIGN KEY (order_id) REFERENCES orders(order_id),
@@ -180,7 +180,7 @@ def generate_data():
             manager_name     VARCHAR(255),
             phone            VARCHAR(20),
             created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at       TIMESTAMP
+            updated_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
 
         CREATE TABLE IF NOT EXISTS inventory (
@@ -195,7 +195,7 @@ def generate_data():
             last_restock_date TIMESTAMP,
             next_restock_date TIMESTAMP,
             created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at       TIMESTAMP,
+            updated_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             CONSTRAINT fk_inventory_product
                 FOREIGN KEY (product_id) REFERENCES products(product_id),
             CONSTRAINT fk_inventory_warehouse
@@ -211,20 +211,8 @@ def generate_data():
             utm_medium       VARCHAR(100),
             utm_campaign     VARCHAR(100),
             created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at       TIMESTAMP
+            updated_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
-
-        ALTER TABLE IF EXISTS categories ALTER COLUMN updated_at DROP DEFAULT;
-        ALTER TABLE IF EXISTS products ALTER COLUMN updated_at DROP DEFAULT;
-        ALTER TABLE IF EXISTS users ALTER COLUMN updated_at DROP DEFAULT;
-        ALTER TABLE IF EXISTS orders ALTER COLUMN updated_at DROP DEFAULT;
-        ALTER TABLE IF EXISTS order_items ALTER COLUMN updated_at DROP DEFAULT;
-        ALTER TABLE IF EXISTS promotions ALTER COLUMN updated_at DROP DEFAULT;
-        ALTER TABLE IF EXISTS order_promotions ALTER COLUMN updated_at DROP DEFAULT;
-        ALTER TABLE IF EXISTS warehouses ALTER COLUMN updated_at DROP DEFAULT;
-        ALTER TABLE IF EXISTS marketing_channels ALTER COLUMN updated_at DROP DEFAULT;
-        ALTER TABLE IF EXISTS inventory ALTER COLUMN updated_at DROP DEFAULT;
-        ALTER TABLE IF EXISTS inventory ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
 
         CREATE TABLE IF NOT EXISTS clickstream (
             event_id         BIGINT PRIMARY KEY,
@@ -246,7 +234,8 @@ def generate_data():
             price_viewed     DECIMAL(15, 2),
             discount_shown   DECIMAL(5, 2),
             is_new_user      BOOLEAN,
-            updated_at       TIMESTAMP,
+            created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             CONSTRAINT fk_clickstream_user
                 FOREIGN KEY (user_id) REFERENCES users(user_id),
             CONSTRAINT fk_clickstream_product
@@ -257,8 +246,26 @@ def generate_data():
                 FOREIGN KEY (channel_id) REFERENCES marketing_channels(channel_id)
         );
 
-        ALTER TABLE IF EXISTS clickstream ALTER COLUMN updated_at DROP DEFAULT;
-        UPDATE clickstream SET updated_at = NULL WHERE updated_at IS NOT NULL;
+        CREATE TABLE IF NOT EXISTS watermark (
+            table_name VARCHAR(100) PRIMARY KEY,
+            last_watermark TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        INSERT INTO watermark (table_name, last_watermark)
+        VALUES
+            ('categories', CURRENT_TIMESTAMP),
+            ('products', CURRENT_TIMESTAMP),
+            ('users', CURRENT_TIMESTAMP),
+            ('orders', CURRENT_TIMESTAMP),
+            ('order_items', CURRENT_TIMESTAMP),
+            ('promotions', CURRENT_TIMESTAMP),
+            ('order_promotions', CURRENT_TIMESTAMP),
+            ('warehouses', CURRENT_TIMESTAMP),
+            ('inventory', CURRENT_TIMESTAMP),
+            ('marketing_channels', CURRENT_TIMESTAMP),
+            ('clickstream', CURRENT_TIMESTAMP)
+        ON CONFLICT (table_name) DO NOTHING;
 
         CREATE INDEX IF NOT EXISTS idx_orders_user_date
             ON orders (user_id, order_date);

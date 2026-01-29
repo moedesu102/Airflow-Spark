@@ -33,11 +33,57 @@ def _get_jdbc_options(args: argparse.Namespace) -> dict[str, str]:
     }
 
 
-def _read_table_incremental(spark: SparkSession, args: argparse.Namespace, table: str):
+def _get_pg_connection(args: argparse.Namespace):
+    parsed = urlparse(args.jdbc_url.replace("jdbc:", ""))
+    return psycopg2.connect(
+        host=parsed.hostname,
+        port=parsed.port or 5432,
+        dbname=parsed.path.lstrip("/"),
+        user=args.jdbc_user,
+        password=args.jdbc_password,
+    )
+
+
+def _ensure_watermark_table(conn) -> None:
+    with conn.cursor() as cur:
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS bronze_watermarks (
+                table_name VARCHAR(255) PRIMARY KEY,
+                last_watermark TIMESTAMP NOT NULL DEFAULT '1970-01-01 00:00:00'
+            )
+        """)
+    conn.commit()
+
+
+def _get_watermark(conn, table: str) -> datetime:
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT last_watermark FROM bronze_watermarks WHERE table_name = %s",
+            (table,)
+        )
+        row = cur.fetchone()
+        if row:
+            return row[0]
+        return datetime(1970, 1, 1)
+
+
+def _update_watermark(conn, table: str, new_watermark: datetime) -> None:
+    with conn.cursor() as cur:
+        cur.execute("""
+            INSERT INTO bronze_watermarks (table_name, last_watermark)
+            VALUES (%s, %s)
+            ON CONFLICT (table_name)
+            DO UPDATE SET last_watermark = EXCLUDED.last_watermark
+        """, (table, new_watermark))
+    conn.commit()
+
+
+def _read_table_incremental(spark: SparkSession, args: argparse.Namespace, table: str, watermark: datetime):
     options = _get_jdbc_options(args)
 
     if table in TABLES_WITH_UPDATED_AT:
-        query = f"(SELECT * FROM {table} WHERE updated_at IS NULL) AS src"
+        watermark_str = watermark.strftime("%Y-%m-%d %H:%M:%S")
+        query = f"(SELECT * FROM {table} WHERE updated_at > '{watermark_str}') AS src"
         return spark.read.format("jdbc").options(**options).option("dbtable", query).load()
 
     return spark.read.format("jdbc").options(**options).option("dbtable", table).load()
@@ -65,6 +111,9 @@ def main() -> None:
 
     os.makedirs(args.bronze_out, exist_ok=True)
 
+    conn = _get_pg_connection(args)
+    _ensure_watermark_table(conn)
+
     spark = SparkSession.builder.appName("EcommerceBronzeBatch").getOrCreate()
 
     now = datetime.utcnow()
@@ -72,7 +121,8 @@ def main() -> None:
 
     extracted_tables = []
     for table in tables:
-        df = _read_table_incremental(spark, args, table)
+        watermark = _get_watermark(conn, table)
+        df = _read_table_incremental(spark, args, table, watermark)
 
         if not df.take(1):
             continue
@@ -80,24 +130,11 @@ def main() -> None:
         bronze_mode = "append" if table in TABLES_WITH_UPDATED_AT else "overwrite"
         _write_bronze(df, args.bronze_out, table, ingestion_ts, bronze_mode)
         extracted_tables.append(table)
-
+        
+        if table in TABLES_WITH_UPDATED_AT:
+            _update_watermark(conn, table, now)
     spark.stop()
-
-    if extracted_tables:
-        parsed = urlparse(args.jdbc_url.replace("jdbc:", ""))
-        conn = psycopg2.connect(
-            host=parsed.hostname,
-            port=parsed.port or 5432,
-            dbname=parsed.path.lstrip("/"),
-            user=args.jdbc_user,
-            password=args.jdbc_password,
-        )
-        with conn:
-            with conn.cursor() as cur:
-                for table in extracted_tables:
-                    if table in TABLES_WITH_UPDATED_AT:
-                        cur.execute(f"UPDATE {table} SET updated_at = NOW() WHERE updated_at IS NULL")
-        conn.close()
+    conn.close()
 
 
 if __name__ == "__main__":

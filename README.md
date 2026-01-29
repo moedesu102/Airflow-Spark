@@ -1,100 +1,142 @@
-# GUIDE: Cài môi trường & chạy DAG (Airflow + Spark)
+# E-commerce Data Pipeline (Airflow + Spark)
 
-## 1) Yêu cầu trước khi chạy
+Pipeline ETL xử lý dữ liệu e-commerce theo kiến trúc **Medallion** (Bronze → Silver → Gold) sử dụng Apache Airflow và Apache Spark.
 
-- Docker Desktop (Windows/Mac) hoặc Docker Engine (Linux)
-- Docker Compose (thường có sẵn trong Docker Desktop)
-- Khuyến nghị:
-  - RAM >= 8GB (tối thiểu 4GB)
-  - CPU >= 2 cores
+---
 
-## 2) Các thành phần trong project
+## 1) Yêu cầu hệ thống
 
-- Airflow: điều phối workflow (DAG)
-- Postgres: database chứa dữ liệu nguồn (và metadata Airflow)
-- Redis: broker cho CeleryExecutor
-- Spark: chạy các batch job được gọi từ Airflow qua SparkSubmit
+- **Docker Desktop** (Windows/Mac) hoặc Docker Engine (Linux)
+- **Docker Compose** (có sẵn trong Docker Desktop)
+- **RAM**: >= 8GB (tối thiểu 4GB)
+- **CPU**: >= 2 cores
 
-Các thư mục quan trọng:
+---
 
-- `dags/`
-  - `generate_data.py`: tạo schema + seed dữ liệu ecommerce vào Postgres
-  - `load_dag.py`: pipeline Spark `batch_bronze >> batch_silver >> batch_gold`
-- `spark_scripts/`
-  - `bronze/run_bronze.py`: đọc Postgres -> ghi parquet bronze (và update watermark `updated_at`)
-  - `silver/run_silver.py`: bronze -> silver (clean + dedup)
-  - `gold/run_gold.py`: silver -> gold (dim/fact + Q1..Q5)
-- `data/`: nơi lưu parquet output (được mount vào container là `/opt/spark-data`)
+## 2) Kiến trúc hệ thống
 
-## 3) Khởi động hệ thống
+| Service | Mô tả |
+|---------|-------|
+| **Airflow** | Điều phối workflow (DAG) |
+| **Postgres** | Database chứa dữ liệu nguồn + metadata Airflow |
+| **Redis** | Message broker cho CeleryExecutor |
+| **Spark** | Xử lý batch job qua SparkSubmitOperator |
 
-Mở terminal tại thư mục `airflow-docker` và chạy:
+---
+
+## 3) Cấu trúc thư mục
+
+```
+airflow-docker/
+├── dags/
+│   ├── generate_data.py          # Tạo schema + seed dữ liệu ecommerce
+│   ├── load_dag.py               # DAG ETL pipeline chính
+│   └── reset_ecommerce_schema.py # Reset toàn bộ schema ecommerce
+│
+├── spark_scripts/
+│   ├── bronze/
+│   │   ├── run_bronze.py         # Postgres → Bronze (incremental với watermark)
+│   │   └── stream_clickstream.py # Ingest clickstream CSV → Bronze
+│   ├── silver/
+│   │   └── run_silver.py         # Bronze → Silver (clean + deduplicate)
+│   ├── gold/
+│   │   └── run_gold.py           # Silver → Gold (dim/fact + analytics)
+│   └── generate_clickstream_csv.py # Tạo file CSV clickstream mẫu
+│
+└── data/                         # Output parquet (mount: /opt/spark-data)
+    ├── bronze/
+    ├── silver/
+    └── gold/
+```
+
+---
+
+## 4) Mô tả chi tiết các file
+
+### DAGs (`dags/`)
+
+| File | DAG ID | Chức năng |
+|------|--------|-----------|
+| `generate_data.py` | `generate_data` | Tạo 11 bảng ecommerce + seed dữ liệu mẫu + tạo clickstream CSV |
+| `load_dag.py` | `ecommerce_etl_pipeline` | Pipeline ETL: `stream_clickstream → batch_bronze → batch_silver → batch_gold` |
+| `reset_ecommerce_schema.py` | `reset_ecommerce_schema` | Drop toàn bộ tables để reset môi trường |
+
+### Spark Scripts (`spark_scripts/`)
+
+| File | Chức năng |
+|------|-----------|
+| `bronze/run_bronze.py` | Đọc incremental từ Postgres (dựa trên `updated_at`) → ghi Parquet Bronze |
+| `bronze/stream_clickstream.py` | Ingest clickstream từ CSV (batch/streaming mode) → Bronze |
+| `silver/run_silver.py` | Làm sạch dữ liệu (trim, validate email/phone, deduplicate theo PK) |
+| `gold/run_gold.py` | Tạo dimension/fact tables + 5 bảng analytics (Q1-Q5) |
+| `generate_clickstream_csv.py` | Sinh file `clickstream_sample.csv` với dữ liệu mẫu |
+
+### Gold Layer Analytics
+
+| Table | Mô tả |
+|-------|-------|
+| `dim_users`, `dim_products`, `dim_promotions`, `dim_marketing_channels` | Dimension tables |
+| `fact_orders`, `fact_order_items` | Fact tables |
+| `gold_q1_conversion_funnel` | Conversion funnel theo category (View → Cart → Purchase) |
+| `gold_q2_rfm_segmentation` | Phân khúc khách hàng theo RFM (VIP, Loyal, Churn Risk...) |
+| `gold_q3_promo_comparison`, `gold_q3_promo_detail` | Hiệu quả khuyến mãi |
+| `gold_q4_inventory_analysis` | Phân tích tồn kho (DSI, slow-moving, low stock) |
+| `gold_q5_attribution` | Marketing attribution (First-touch, Last-touch, Linear) |
+
+---
+
+## 5) Khởi động hệ thống
 
 ```bash
+cd airflow-docker
 docker compose up -d --build
 ```
 
-Chờ 1-3 phút để `airflow-init` chạy xong và các service ổn định.
+Chờ 1-3 phút để `airflow-init` hoàn tất.
 
-## 4) Mở Airflow UI
+---
 
-- URL: `http://localhost:8080`
-- Tài khoản mặc định (theo `docker-compose.yaml`):
-  - Username: `airflow`
-  - Password: `airflow`
+## 6) Truy cập Airflow UI
 
-## 5) Cách chạy DAG tạo dữ liệu: `generate_data`
+- **URL**: http://localhost:8080
+- **Username**: `airflow`
+- **Password**: `airflow`
 
-Mục tiêu: tạo các bảng ecommerce + seed dữ liệu vào Postgres.
+---
 
-Trong Airflow UI:
+## 7) Hướng dẫn chạy
 
-1. Vào tab **DAGs**
-2. Tìm DAG: `generate_data`
-3. Bấm **Unpause**
-4. Bấm **Trigger DAG** (nút Play)
+### Lần đầu tiên
 
-Chạy xong DAG này thì Postgres đã có dữ liệu để ETL dùng.
+1. **Trigger `generate_data`** - Tạo schema + seed dữ liệu
+2. **Trigger `ecommerce_etl_pipeline`** - Chạy ETL pipeline
 
-## 6) Cách chạy DAG ETL: `ecommerce_etl_pipeline`
+### Những lần sau
 
-DAG nằm trong `dags/load_dag.py`.
+- Chỉ cần trigger `ecommerce_etl_pipeline`
 
-Pipeline hiển thị rõ 3 batch:
+### Reset môi trường
 
-```
-batch_bronze >> batch_silver >> batch_gold
-```
+- Trigger `reset_ecommerce_schema` để xóa toàn bộ tables
 
-Trong Airflow UI:
+---
 
-1. Tìm DAG: `ecommerce_etl_pipeline`
-2. Bấm **Unpause**
-3. Bấm **Trigger DAG**
+## 8) Output
 
-## 7) Output được ghi ở đâu?
+Sau khi chạy xong, dữ liệu được lưu tại:
 
-Sau khi chạy xong:
+| Layer | Đường dẫn | Format |
+|-------|-----------|--------|
+| Bronze | `./data/bronze/<table>/` | Parquet |
+| Silver | `./data/silver/<table>/` | Parquet (partitioned by `_ingestion_date`) |
+| Gold | `./data/gold/<table>/` | Parquet |
 
-- Bronze: `./data/bronze/<table>/...`
-- Silver: `./data/silver/<table>/...`
-- Gold: `./data/gold/<table>/...`
+---
 
-## 8) Thứ tự chạy khuyến nghị (dễ nhớ)
+## 9) Troubleshooting
 
-- Lần đầu:
-  1. Trigger `generate_data`
-  2. Trigger `ecommerce_etl_pipeline`
-
-- Những lần sau (chỉ ETL):
-  - Trigger lại `ecommerce_etl_pipeline`
-
-## 9) Troubleshooting nhanh
-
-- Không thấy DAG:
-  - Chờ 1-2 phút để dag-processor load DAG
-  - Hoặc restart stack: `docker compose restart`
-
-- Job Spark fail:
-  - Kiểm tra Spark master có chạy và Airflow có connect được `spark://spark-master:7077`
-  - Kiểm tra log của task trong Airflow UI
+| Vấn đề | Giải pháp |
+|--------|-----------|
+| Không thấy DAG | Chờ 1-2 phút hoặc `docker compose restart` |
+| Spark job fail | Kiểm tra Spark master (`spark://spark-master:7077`) và log trong Airflow UI |
+| Lỗi connection Postgres | Kiểm tra service postgres đang chạy: `docker compose ps` |

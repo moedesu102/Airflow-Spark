@@ -1,0 +1,57 @@
+services:
+  spark-master:
+    image: apache/spark:latest
+    container_name: spark-master
+    environment:
+      - SPARK_MODE=master
+      - PYSPARK_PYTHON=/usr/bin/python3
+      - PYSPARK_DRIVER_PYTHON=/usr/bin/python3 # Map python environment để đảm bảo đồng nhất với Airflow
+      - SPARK_RPC_AUTHENTICATION_ENABLED=no # Map python environment để đảm bảo đồng nhất với Airflow
+      - SPARK_RPC_ENCRYPTION_ENABLED=no
+      - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
+      - SPARK_SSL_ENABLED=no
+      - SPARK_MASTER_WEBUI_PORT=8081
+    ports:
+      - "8081:8081" # Spark WEB UI -> Để khác với port của Airflow 
+      - "7077:7077" # Port của master node
+    volumes:
+      - spark-data:/bitnami
+      - ./apps:/opt/spark-apps
+      - ../airflow-docker/data:/opt/spark-data  # Dùng chung thư mục data với Airflow
+    command: /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master  # Explicitly start the master
+    networks:
+      - airflow-docker_default # Map tới network với Airflow để 2 service gọi được nhau trong cùng 1 mạng
+
+  spark-worker:
+    image: apache/spark:latest
+    container_name: spark-worker
+    user: root
+    environment:
+      - SPARK_MODE=worker
+      - PYSPARK_PYTHON=/usr/bin/python3 # Map python environment để đảm bảo đồng nhất với Airflow
+      - PYSPARK_DRIVER_PYTHON=/usr/bin/python3 # Map python environment để đảm bảo đồng nhất với Airflow
+      - SPARK_MASTER=spark://spark-master:7077 
+      - SPARK_WORKER_MEMORY=2G # Config memory cho Worker
+      - SPARK_WORKER_CORES=2 # Config CPU cho Worker
+      - SPARK_RPC_AUTHENTICATION_ENABLED=no
+      - SPARK_RPC_ENCRYPTION_ENABLED=no
+      - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
+      - SPARK_SSL_ENABLED=no
+    volumes:
+      - spark-data:/bitnami
+      - ./apps:/opt/spark-apps
+      - ../airflow-docker/data:/opt/spark-data  # Dùng chung thư mục data với Airflow
+      - ../airflow-docker/spark_scripts:/opt/airflow/spark_scripts
+    depends_on:
+      - spark-master
+    command: /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077  # Explicitly start the worker
+    networks:
+      - airflow-docker_default # Map tới network với Airflow để 2 service gọi được nhau trong cùng 1 mạng
+
+networks:
+  airflow-docker_default: # Map tới network với Airflow để 2 service gọi được nhau trong cùng 1 mạng
+    external: true # Khao báo này thì cần phải có sẵn airflow-docker_default
+
+volumes:
+  spark-data:
+ 

@@ -1,0 +1,4 @@
+apache-airflow-providers-apache-spark==5.5.0
+pyspark
+faker
+apache-airflow-providers-postgres

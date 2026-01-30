@@ -18,9 +18,9 @@ def generate_clickstream_rows(n: int = 10, seed: int | None = 42):
 
     rows = []
     for _ in range(n):
-        user_id = random.randint(1, 20)
-        product_id = random.randint(1, 10)
-        category_id = random.randint(1, 20)
+        user_id = random.randint(1, 200)
+        product_id = random.randint(1, 100)
+        category_id = random.randint(1, 200)
         channel_id = random.randint(1, 8)
 
         event_type = random.choices(event_types, weights=[0.7, 0.2, 0.1], k=1)[0]
@@ -66,7 +66,7 @@ def main():
 
     out_path = os.path.join(output_dir, "clickstream_sample.csv")
 
-    rows = generate_clickstream_rows(n=10)
+    rows = generate_clickstream_rows(n=1000)
     fieldnames = [
         "event_id",
         "user_id",

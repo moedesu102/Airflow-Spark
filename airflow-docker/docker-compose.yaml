@@ -280,6 +280,12 @@ services:
         echo
         chown -R "${AIRFLOW_UID}:0" /opt/airflow/
         echo
+        echo "Ensure /opt/spark-data is writable"
+        echo
+        mkdir -p /opt/spark-data
+        chown -R "${AIRFLOW_UID}:0" /opt/spark-data
+        chmod 775 /opt/spark-data
+        echo
         echo "Change ownership of files in shared volumes to ${AIRFLOW_UID}:0"
         echo
         chown -v -R "${AIRFLOW_UID}:0" /opt/airflow/{logs,dags,plugins,config}

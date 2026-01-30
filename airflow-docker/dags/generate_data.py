@@ -297,7 +297,7 @@ def generate_data():
     )
 
     @task
-    def seed_categories(n: int = 20) -> None:
+    def seed_categories(n: int = 200) -> None:
         hook = PostgresHook(postgres_conn_id="postgres")
         faker = Faker()
         with hook.get_conn() as conn:
@@ -387,7 +387,7 @@ def generate_data():
                 )
 
     @task
-    def seed_users(n: int = 20) -> None:
+    def seed_users(n: int = 200) -> None:
         hook = PostgresHook(postgres_conn_id="postgres")
         faker = Faker()
         loyalty_segments = ["VIP", "Loyal", "New", "Churn"]
@@ -399,7 +399,7 @@ def generate_data():
                 for i in range(1, n + 1):
                     user_id = start_id + i
                     full_name = faker.name()
-                    email = faker.unique.email()
+                    email = f"user{user_id}_{faker.user_name()}@{faker.free_email_domain()}"
                     phone = faker.msisdn()[:20]
                     address = faker.address()
                     city = faker.city()[:100]
@@ -451,7 +451,7 @@ def generate_data():
                 )
 
     @task
-    def seed_products(n: int = 10) -> None:
+    def seed_products(n: int = 100) -> None:
         hook = PostgresHook(postgres_conn_id="postgres")
         faker = Faker()
         statuses = ["active", "inactive", "discontinued"]
@@ -526,7 +526,7 @@ def generate_data():
                 )
 
     @task
-    def seed_warehouses(n: int = 5) -> None:
+    def seed_warehouses(n: int = 50) -> None:
         hook = PostgresHook(postgres_conn_id="postgres")
         faker = Faker()
         with hook.get_conn() as conn:
@@ -608,7 +608,7 @@ def generate_data():
                 )
 
     @task
-    def seed_promotions(n: int = 30) -> None:
+    def seed_promotions(n: int = 300) -> None:
         hook = PostgresHook(postgres_conn_id="postgres")
         faker = Faker()
         with hook.get_conn() as conn:
@@ -658,7 +658,7 @@ def generate_data():
                 )
 
     @task
-    def seed_orders(n: int = 20) -> None:
+    def seed_orders(n: int = 200) -> None:
         hook = PostgresHook(postgres_conn_id="postgres")
         faker = Faker()
         with hook.get_conn() as conn:
@@ -837,7 +837,7 @@ def generate_data():
                 )
 
     @task
-    def seed_clickstream(n_events: int = 300) -> None:
+    def seed_clickstream(n_events: int = 3000) -> None:
         hook = PostgresHook(postgres_conn_id="postgres")
         faker = Faker()
         with hook.get_conn() as conn:
